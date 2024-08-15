@@ -1,59 +1,70 @@
 #!/bin/bash
+####################################### VARIABLES DECLARATION ######################################
 
-#get current date
+#timestamp for logging and file naming
 TIMESTAMP=$(date +%Y%m%d)
 
-#get compressed file dir
-ARCHIVED_PATH="/var/log/archived"
+LOG_TIMESTAMP="[$TIMESTAMP-$(date +%H:%M)]"
 
 #logs base path
 LOGS_PATH="/var/log"
 
+#get compressed file dir
+ARCHIVED_PATH="$LOGS_PATH/archived"
+
+#set this script log file name
+SCRIPT_LOG="$ARCHIVED_PATH/backup_$TIMESTAMP.log"
+
 #ensure $ARCHIVED_PATH exists
-sudo mkdir -p $ARCHIVED_PATH
+mkdir -pv "$ARCHIVED_PATH" || error_handler "Failed to create a directory in $LOGS_PATH." >> "$SCRIPT_LOG"
+
+#ensure the script log file is exists
+touch "$SCRIPT_LOG" || error_handler "Failed to create a file in $LOGS_PATH." >> "$SCRIPT_LOG"
+
+####################################### FUNCTION DECLARATION #######################################
+
+#error handler
+error_handler(){
+
+    echo "$LOG_TIMESTAMP ERROR: $1" 2>&1
+    exit 1
+
+}
+
+####################################### BEGINNING OF SCRIPT ######################################
+
+echo "$LOG_TIMESTAMP Script is starting..." | tee -a "$SCRIPT_LOG"
+echo ''
 
 #read each line of directory that reaches 100M by size
-sudo du -d0 -t +100M $LOGS_PATH/* | while read -r output; do
+find "$LOGS_PATH/"* -type f -exec du -hat 100M {} + | awk '{print $2}' | while read -r output; do
 
-    #get the specific target dir name
-    DIR_NAME=$(echo "$output" | awk -F '/' '{print $4}')
+    if [[ "$output" != "$ARCHIVED_PATH" ]]; then
 
-    #set the tarball file name
-    ARCHIVED_NAME="$ARCHIVED_PATH/archived_logs_$DIR_NAME-$TIMESTAMP.tar.gz"
+        #set archive name
+        ARCHIVED_NAME="archived_logs_$TIMESTAMP.tar.gz"
 
-    #compress the log files
-    echo "$output" | awk '{print $2}'| sudo tar -czf "$ARCHIVED_NAME" -T -
-
-    #prompt the result
-    if [ $? -eq 0 ]; then
-
-        echo "Log files compressed."
+        #compress the log files
+        echo "$LOG_TIMESTAMP Compressing log files..." | tee -a "$SCRIPT_LOG"
         echo ''
 
-        echo "Removing log files..."
+        tar -cvzf "$ARCHIVED_PATH/$ARCHIVED_NAME" -T - || error_handler "Failed to compress logs." >> "$SCRIPT_LOG"
+
+        echo "$LOG_TIMESTAMP Log files compressed." | tee -a "$SCRIPT_LOG"
         echo ''
 
-        #remove the log files to save more space
-        sudo rm -r $LOGS_PATH/"$DIR_NAME"/*
+        echo "$LOG_TIMESTAMP Removing log files..." | tee -a "$SCRIPT_LOG"
+        echo ''
 
-        #prompt the removing result
-        if [ $? -eq 0 ]; then
-
-            echo "Log files removed."
-            echo ''
-
-        else
-
-            echo "No log files left."
-            echo ''
-
-        fi
-
-    else
-
-        echo "WARNING: Couldn't compress files. Check this script logic."
+        #check the log files existence and remove them if any to save more space
+        rm -rv "$output" || error_handler "Failed to compress logs." >> "$SCRIPT_LOG"
+        echo ''
+        echo "$LOG_TIMESTAMP Log files removed." | tee -a "$SCRIPT_LOG"
         echo ''
 
     fi
 
 done
+
+echo "$LOG_TIMESTAMP Script is stopped." | tee -a "$SCRIPT_LOG"
+echo '' | tee -a "$SCRIPT_LOG"
